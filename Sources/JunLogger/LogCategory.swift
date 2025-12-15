@@ -3,7 +3,7 @@
 //  BaseDomain
 //
 //  Created by JunHyeok Lee on 12/9/25.
-//  Copyright © 2025 com.junhyeok.Streaming. All rights reserved.
+//  Copyright © 2025 com.junhyeok.JunLogger. All rights reserved.
 //
 
 import Foundation

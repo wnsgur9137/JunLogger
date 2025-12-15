@@ -3,7 +3,7 @@
 //  BaseDomain
 //
 //  Created by JunHyeok Lee on 12/9/25.
-//  Copyright © 2025 com.junhyeok.Streaming. All rights reserved.
+//  Copyright © 2025 com.junhyeok.JunLogger. All rights reserved.
 //
 
 import Foundation
@@ -13,7 +13,7 @@ extension Logger {
     
     /// 앱의 Bundle Identifier를 서브시스템으로 사용
     private static var subsystem: String {
-        Bundle.main.bundleIdentifier ?? "com.junhyeok.Streaming"
+        Bundle.main.bundleIdentifier ?? ""
     }
     
     // MARK: - Category Loggers

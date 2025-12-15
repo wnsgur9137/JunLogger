@@ -6,10 +6,10 @@ Apple의 통합 로깅 시스템(OSLog)을 기반으로 한 인터페이스
 ## 주요 기능
 
 - **카테고리 기반 로깅**: Network, UI, Data, Domain, Lifecycle, Auth, Performance, General
-- **다양한 로그 레벨**: Debug, Info, Warning, Error, Fault
+- **로그 레벨**: Debug, Info, Warning, Error, Fault
 - **성능 측정**: Signpost를 활용한 성능 프로파일링
-- **풍부한 컨텍스트**: 파일명, 함수명, 라인 번호 자동 포함
-- **애플 생태계 전체 지원**: iOS 14+, macOS 11+, watchOS 7+, tvOS 14+, visionOS 1+
+- **컨텍스트**: 파일명, 함수명, 라인 번호 자동 포함
+- **지원 OS**: iOS 14+, macOS 11+, watchOS 7+, tvOS 14+, visionOS 1+
 
 ## 요구사항
 
@@ -143,6 +143,6 @@ Logger.domain.error("도메인 로직 오류", error: error)
 1. macOS의 Console.app 실행
 2. 시뮬레이터 또는 연결된 디바이스 선택
 3. 검색 필터 사용:
-   - `subsystem:com.junhyeok.Streaming` (또는 앱의 Bundle Identifier)
+   - `subsystem:{Bundle Identifier}` - Bundle Id
    - `category:Network` - 네트워크 로그만 보기
    - `category:UI` - UI 로그만 보기
