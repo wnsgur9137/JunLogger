@@ -1,0 +1,140 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - '[0-9]+.[0-9]+.[0-9]+'
+      - '[0-9]+.[0-9]+.[0-9]+-*'
+
+permissions:
+  contents: write
+
+jobs:
+  validate-tag:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.parse.outputs.version }}
+      is_major: ${{ steps.parse.outputs.is_major }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: parse
+        name: Parse version
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          MAJOR="${VERSION%%.*}"
+          REST="${VERSION#*.}"
+          MINOR="${REST%%.*}"
+          PATCH_FULL="${REST#*.}"
+          PATCH="${PATCH_FULL%%-*}"
+          if [ "$MINOR" = "0" ] && [ "$PATCH" = "0" ]; then
+            echo "is_major=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_major=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Tag is annotated
+        run: |
+          TYPE=$(git for-each-ref --format='%(objecttype)' "refs/tags/${GITHUB_REF_NAME}")
+          if [ "$TYPE" != "tag" ]; then
+            echo "::error::lightweight 태그입니다. annotated 태그를 사용하세요 (git tag -a)."
+            exit 1
+          fi
+
+      - name: Tag message format
+        run: |
+          SUBJECT=$(git tag -l --format='%(contents:subject)' "${GITHUB_REF_NAME}")
+          EXPECTED="Release ${GITHUB_REF_NAME}"
+          if [ "$SUBJECT" != "$EXPECTED" ]; then
+            echo "::error::태그 메시지 형식 위반. 기대: '$EXPECTED', 실제: '$SUBJECT'"
+            exit 1
+          fi
+
+      - name: Tag is ancestor of main
+        run: |
+          git fetch origin main
+          if ! git merge-base --is-ancestor "${GITHUB_REF_NAME}" origin/main; then
+            echo "::error::태그가 main의 조상이 아닙니다. main에서 분기된 커밋에 태그를 붙이세요."
+            exit 1
+          fi
+
+      - name: CHANGELOG section exists
+        run: |
+          awk -v ver="${GITHUB_REF_NAME}" '
+            $0 ~ "^## \\[" ver "\\]" { found=1 }
+            END { exit found ? 0 : 1 }
+          ' CHANGELOG.md || {
+            echo "::error::CHANGELOG.md에 ## [${GITHUB_REF_NAME}] 섹션이 없습니다."
+            exit 1
+          }
+
+      - name: CHANGELOG compare link exists
+        run: |
+          if ! grep -q "^\[${GITHUB_REF_NAME}\]:.*compare/" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md 하단 [${GITHUB_REF_NAME}] 비교 링크가 없습니다."
+            exit 1
+          fi
+
+      - name: Migration guide exists (MAJOR only)
+        if: steps.parse.outputs.is_major == 'true'
+        run: |
+          MAJOR="${GITHUB_REF_NAME%%.*}"
+          if [ ! -f "docs/migration-${MAJOR}.0.md" ]; then
+            echo "::error::MAJOR 릴리스인데 docs/migration-${MAJOR}.0.md가 없습니다."
+            exit 1
+          fi
+
+      - name: Version monotonicity
+        run: |
+          PREV=$(git tag --sort=-v:refname | grep -v "^${GITHUB_REF_NAME}$" | head -1 || echo "")
+          if [ -n "$PREV" ]; then
+            HIGHEST=$(printf '%s\n%s\n' "$PREV" "${GITHUB_REF_NAME}" | sort -V | tail -1)
+            if [ "$HIGHEST" != "${GITHUB_REF_NAME}" ]; then
+              echo "::error::이전 태그($PREV)보다 낮거나 같은 버전입니다."
+              exit 1
+            fi
+          fi
+
+  verify-build:
+    needs: validate-tag
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+      - name: Build
+        run: swift build
+      - name: Test
+        run: swift test
+
+  publish:
+    needs: [validate-tag, verify-build]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract CHANGELOG section for this tag
+        run: |
+          awk -v ver="${GITHUB_REF_NAME}" '
+            $0 ~ "^## \\[" ver "\\]" { capture=1; next }
+            capture && /^## \[/ { exit }
+            capture { print }
+          ' CHANGELOG.md > release-body.md
+          if [ ! -s release-body.md ]; then
+            echo "::error::release-body.md 추출 실패: ## [${GITHUB_REF_NAME}] 섹션이 비어있습니다."
+            exit 1
+          fi
+          echo "--- release-body.md ---"
+          cat release-body.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          body_path: release-body.md
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-') }}
