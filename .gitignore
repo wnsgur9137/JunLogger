@@ -39,3 +39,7 @@ fastlane/test_output
 
 # Code Injection
 iOSInjectionProject/
+
+# Claude Code / oh-my-claudecode
+.mcp.json
+.omc/
