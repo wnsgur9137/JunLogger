@@ -1,148 +1,170 @@
 # JunLogger
 
-iOS, macOS, watchOS, tvOS, visionOS를 위한 간편하고 강력한 로깅 라이브러리
-Apple의 통합 로깅 시스템(OSLog)을 기반으로 한 인터페이스
+iOS, macOS, watchOS, tvOS, visionOS를 위한 Apple OSLog 기반 로깅 라이브러리
+인터폴레이션 레벨 privacy 마커와 컴파일 타임 lazy evaluation을 그대로 보존하는 얇은 facade
 
 ## 주요 기능
 
-- **카테고리 기반 로깅**: Network, UI, Data, Domain, Lifecycle, Auth, Performance, General
-- **로그 레벨**: Debug, Info, Warning, Error, Fault
-- **성능 측정**: Signpost를 활용한 성능 프로파일링
-- **컨텍스트**: 파일명, 함수명, 라인 번호 자동 포함
+- **카테고리 기반 로깅**: 기본 8개 카테고리(Network, UI, Data, Domain, Lifecycle, Auth, Performance, General) 제공 + 사용자 정의 카테고리 자유 추가
+- **OSLog native 인터폴레이션**: `\(value, privacy: .private)` 같은 privacy 마커가 호출 위치 그대로 작동
+- **Lazy evaluation**: 로그 레벨이 비활성화된 환경에서 인자 표현식이 평가되지 않음
+- **DI 가능**: `LoggingProvider` 프로토콜로 테스트 환경에서 로그를 끄거나 교체 가능
+- **성능 측정**: Signpost API 제공
 - **지원 OS**: iOS 14+, macOS 11+, watchOS 7+, tvOS 14+, visionOS 1+
 
 ## 요구사항
 
-- iOS 14.0+
-- macOS 11.0+
-- watchOS 7.0+
-- tvOS 14.0+
-- visionOS 1.0+
+- iOS 14.0+ / macOS 11.0+ / watchOS 7.0+ / tvOS 14.0+ / visionOS 1.0+
 - Swift 5.9+
 
 ## 설치
 
 ### Swift Package Manager
 
-Xcode에서 `File > Add Package Dependencies...`를 선택하고 다음 URL을 입력:
-
-```
-https://github.com/wnsgur9137/JunLogger.git
-```
-
-또는 `Package.swift` 파일에 직접 추가:
-
 ```swift
 dependencies: [
-    .package(url: "https://github.com/wnsgur9137/JunLogger.git", from: "1.0.0")
+    .package(url: "https://github.com/wnsgur9137/JunLogger.git", from: "2.0.0")
 ]
 ```
 
-## 로그 카테고리
-
-| 카테고리 | 용도 |
-|---------|------|
-| `.network` | API 호출, 네트워크 요청/응답 |
-| `.ui` | 화면 전환, 사용자 인터랙션 |
-| `.data` | Repository, Database, Cache |
-| `.domain` | UseCase, 비즈니스 로직 |
-| `.lifecycle` | 앱 시작/종료, 백그라운드 전환 |
-| `.auth` | 인증, 보안 관련 |
-| `.performance` | 성능 측정 |
-| `.general` | 일반 로그 |
-
-### Xcode 콘솔에서 확인
-
-Xcode 콘솔에서 이모지와 함께 로그 표시:
-- 🔨 Debug
-- ℹ️ Info
-- ⚠️ Warning
-- ❗ Error
-- 🚨 Fault
-
 ## 사용법
 
-### 기본 로깅
+### 기본 사용
 
 ```swift
 import JunLogger
 
-// 카테고리와 함께 로그 출력
-Log.debug(.network, "API 호출 시작")
-Log.info(.ui, "HomeView appeared")
-Log.warning(.data, "데이터 경고")
-Log.error(.domain, "데이터 처리 실패", error: someError)
-Log.fault(.general, "크래시 발생 가능")
-
-// 카테고리 생략 시 .general 사용
-Log.debug("일반 디버그 로그")
-Log.info("일반 정보 로그")
+Log[.network].debug("GET /api/users")
+Log[.ui].info("HomeView appeared")
+Log[.data].warning("Cache expired")
+Log[.domain].error("UseCase failed")
+Log[.general].fault("Unrecoverable state")
+Log[.lifecycle].notice("Entered background")
 ```
 
-### 카테고리별 로깅
+`Log[.category]`는 `os.Logger` 인스턴스를 반환하므로 그 위의 `.debug` / `.info` / `.notice` / `.warning` / `.error` / `.critical` / `.fault` 등 모든 OSLog native 메서드를 자유롭게 사용할 수 있다.
+
+### Privacy 마커
+
+JunLogger는 호출 위치의 OSLog 인터폴레이션을 그대로 노출하므로 인자별 privacy 어노테이션이 작동한다.
 
 ```swift
-// Network 카테고리
-Log.debug(.network, "GET /api/users")
-Log.info(.network, "응답 수신: 200 OK")
-
-// UI 카테고리
-Log.info(.ui, "화면 전환: HomeView -> ProfileView")
-Log.debug(.ui, "버튼 탭: \(buttonTitle)")
-
-// Data 카테고리
-Log.debug(.data, "CoreData 저장 시작")
-Log.error(.data, "데이터베이스 저장 실패", error: dbError)
-
-// Domain 카테고리
-Log.info(.domain, "UseCase 실행: FetchUserUseCase")
-Log.warning(.domain, "비즈니스 로직 경고")
-
-// Lifecycle 카테고리
-Log.info(.lifecycle, "앱 시작됨")
-Log.debug(.lifecycle, "백그라운드로 전환")
-
-// Auth 카테고리
-Log.info(.auth, "로그인 성공")
-Log.error(.auth, "인증 실패", error: authError)
+Log[.auth].info("user: \(userID, privacy: .private)")
+Log[.network].debug("POST \(path, privacy: .public) body: \(body, privacy: .sensitive)")
+Log[.auth].error("token: \(jwt, privacy: .private(mask: .hash))")
 ```
 
-### 성능 측정
+호출자가 `String` 변수를 미리 만들어 `"\(savedMessage)"`로 넘기면 OSLog의 privacy/lazy 최적화 모두 손실되므로, 가능하면 인터폴레이션을 호출 위치에서 작성한다.
+
+### 사용자 정의 카테고리
+
+`LogCategory`는 `ExpressibleByStringLiteral`이므로 문자열 리터럴이 그대로 카테고리가 된다. 기본 8개 외의 도메인 카테고리를 자유롭게 추가할 수 있다.
 
 ```swift
-// 성능 측정 시작
-let signpostID = Log.beginSignpost(name: "데이터 로딩")
+Log["Payment"].info("Charged \(amount)")
+Log["Analytics"].debug("event: \(name, privacy: .public)")
 
-// 시간이 걸리는 작업 수행
+// 자주 쓰는 카테고리는 extension으로 정적 프로퍼티화하면 편리하다
+extension LogCategory {
+    public static let payment: LogCategory = "Payment"
+    public static let analytics: LogCategory = "Analytics"
+}
+
+Log[.payment].info("Charged \(amount)")
+```
+
+### 로그 레벨과 디스크 기록 정책
+
+| 메서드 | OSLogType | 디스크 기록 | 의도 |
+| --- | --- | --- | --- |
+| `debug` / `trace` | `.debug` | 기본 미저장 | 개발 verbose, 프로덕션 zero cost |
+| `info` | `.info` | 수집 도구 활성화 시 | 보조 정보 |
+| `notice` / `log` | `.default` | 항상 저장 (한도 내) | 운영 상태 추적 기준점 |
+| `warning` / `error` | `.error` | 저장 + activity chain | 프로세스 오류 |
+| `critical` / `fault` | `.fault` | 저장 + activity chain | 코드 결함 |
+
+운영 환경에서 디바이스 로그를 반드시 남기고 싶다면 `notice` 또는 `error` 이상을 사용한다.
+
+### 성능 측정 (Signpost)
+
+```swift
+let signpostID = Log.beginSignpost(name: "Data Loading")
 await loadData()
-
-// 성능 측정 종료
-Log.endSignpost(name: "데이터 로딩", signpostID: signpostID)
+Log.endSignpost(name: "Data Loading", signpostID: signpostID)
 ```
 
-Instruments의 os_signpost 도구를 사용하여 성능 데이터를 시각화
+Instruments의 os_signpost 도구로 시각화한다.
 
-### Logger 직접 사용
+### 로그 끄기 / 테스트 환경 (DI)
 
-카테고리별 Logger를 직접 사용 가능:
+`Log.provider`를 교체해 모든 카테고리의 출력을 일괄 끄거나 임의 구현체로 교체한다.
+
+```swift
+import JunLogger
+
+// 앱 시작 시점에 한 번만 설정
+Log.provider = DisabledLogProvider()
+```
+
+테스트:
+
+```swift
+override func setUp() {
+    super.setUp()
+    Log.provider = DisabledLogProvider()
+}
+
+override func tearDown() {
+    Log.provider = OSLogProvider()
+    super.tearDown()
+}
+```
+
+`Log.provider`는 `nonisolated(unsafe)`이므로 동시 변경은 피한다.
+
+### 직접 Logger 사용 (1.x 호환 경로)
+
+기존 `Logger.network` 등의 정적 프로퍼티는 그대로 유지된다. `Log.provider` DI 경로를 거치지 않는다는 점만 다르다.
 
 ```swift
 import OSLog
 import JunLogger
 
-Logger.network.debug("네트워크 요청 시작")
-Logger.ui.info("UI 업데이트 완료")
-Logger.data.warning("캐시 만료 경고")
-Logger.domain.error("도메인 로직 오류", error: error)
+Logger.network.debug("...")
+Logger.auth.error("...")
 ```
 
 ## 로그 확인
 
-### Console.app에서 확인
+### Console.app
 
 1. macOS의 Console.app 실행
 2. 시뮬레이터 또는 연결된 디바이스 선택
-3. 검색 필터 사용:
-   - `subsystem:{Bundle Identifier}` - Bundle Id
-   - `category:Network` - 네트워크 로그만 보기
-   - `category:UI` - UI 로그만 보기
+3. 메타데이터 검색 사용
+   - `subsystem:com.your.bundle.id`
+   - `category:Network`
+
+Xcode 15 이상의 Debug Console은 카테고리/타입/타임스탬프 컬럼을 토글하고, 검색창에 `category:Auth` 같은 메타데이터 쿼리를 받는다. 별도 prefix 없이도 시각적 구분과 필터링이 가능하다.
+
+### `log` CLI
+
+```sh
+log stream --predicate 'subsystem == "com.your.bundle.id" AND category == "Network"'
+log show --last 5m --predicate 'subsystem == "com.your.bundle.id"'
+```
+
+## 1.x → 2.0 마이그레이션
+
+자세한 변환 가이드는 [docs/migration-2.0.md](docs/migration-2.0.md)를 참고한다.
+
+요약:
+
+```swift
+// 1.x
+Log.debug(.network, "API 호출 시작")
+Log.error(.data, "저장 실패", error: dbError)
+
+// 2.0
+Log[.network].debug("API 호출 시작")
+Log[.data].error("저장 실패: \(dbError.localizedDescription, privacy: .public)")
+```
